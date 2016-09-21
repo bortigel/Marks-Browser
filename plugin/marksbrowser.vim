@@ -24,6 +24,64 @@ if exists("loaded_marksbrowser")
 endif
 let loaded_marksbrowser = 1
 
+let MarksBrowser = {}
+
+function! MarksBrowser.new( multihead_client )
+    let marksbrowser = copy( s:MarksBrowser )
+    let marksbrowser.multihead_client = a:multihead_client
+
+    return marksbrowser
+endfunction
+
+call g:Multihead.install_plugin('MarksBrowser')
+
+function! MarksBrowser.notify( client_name, ... )
+    let marks = ''
+    for mark in s:FetchMarks()
+        let marks .= mark[0] . "\n"
+    endfor
+    call g:Multihead.send_output( a:client_name, marks, 'g:Multihead.MarksBrowser.update' )
+endfunction
+
+let s:MarksBrowser = {}
+
+function! s:MarksBrowser.connect( server_name )
+    call self.multihead_client.connect( a:server_name )
+    call self.init()
+    call self.ask_for_update()
+
+    let multihead_marksbrowser_attached = 1
+endfunction
+
+function! s:MarksBrowser.init()
+    call s:setupBindings()
+    call s:setupSyntax()
+    call s:init_options()
+    call self.init_autocommands()
+endfunction
+
+function! s:MarksBrowser.init_autocommands()
+    call self.multihead_client.install_server_autocommands(['BufEnter', 'BufDelete'])
+endfunction
+
+function! s:MarksBrowser.ask_for_update()
+    call self.multihead_client.call_plugin_function_on_server( printf('notify("%s")', self.multihead_client.name) )
+endfunction
+
+function! s:MarksBrowser.update()
+    let marks = remote_read( self.multihead_client.server.id )
+    let marks_list = split( marks, "\n" )
+    call self.replace_buffer_contents( marks )
+endfunction
+
+function! s:MarksBrowser.replace_buffer_contents( new_content )
+    silent % delete _
+    silent put =a:new_content
+    silent 1 delete _
+    redraw
+endfunction
+
+
 if !exists("marksCloseWhenSelected")
   let s:marksCloseWhenSelected = 1
 else
@@ -38,7 +96,7 @@ let s:originalBuff = 1
 let s:bufNo = -1
 let s:pos = []
 
-com! -nargs=0 MarksBrowser :call <sid>ToggleMarksBrowser()
+com! -nargs=0 OldMarksBrowser :call <sid>ToggleMarksBrowser()
 
 fun! s:ToggleMarksBrowser()
   let winNo = bufwinnr(s:bufNo)
@@ -73,7 +131,8 @@ fun! s:switchTo(winNo)
 endf
 
 fun! s:Fill(lines, lnum)
-  setlocal modifiable
+    "  FIXME
+"  setlocal modifiable
   1,$d _
   let blnum = 0
   let glnum = 0
@@ -99,8 +158,15 @@ fun! s:Fill(lines, lnum)
   endif
   call cursor(blnum - 1, 0)
 
-  call s:setupSyntax()
-  setlocal nomodifiable
+  if !exists("multihead_marksbrowser_attached")
+      call s:setupSyntax()
+      call s:init_options()
+  endif
+endf
+
+fun! s:init_options()
+    "  FIXME
+"  setlocal nomodifiable
   setlocal nobuflisted
   setlocal nonumber
   setlocal noswapfile
@@ -108,6 +174,7 @@ fun! s:Fill(lines, lnum)
   setlocal bufhidden=delete
   setlocal noshowcmd
   setlocal nowrap
+  setlocal noruler
 endf
 
 fun! s:Header()
